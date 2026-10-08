@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QuickBitezzz</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .admin-link-btn {
+            background-color: #1a252f;
+            color: #ffffff;
+            border: none;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: none;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        .admin-link-btn:hover {
+            background-color: #2c3e50;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <header class="header-banner">
+            <img src="images/logo.jpg" alt="Website Logo" class="logo-img">
+            <div>
+                <a href="admin.html" class="admin-link-btn">👨‍🍳 Kitchen Admin</a>
+                <button onclick="logoutUser()" class="logout-btn">Logout</button>
+            </div>
+        </header>
+
+        <div id="userInfo" class="seat-box"></div>
+        
+        <section class="seat-section">
+            <h2>🪑 Seat Availability</h2>
+            <div id="seatInfo" class="seat-box">Loading seats...</div>
+        </section>
+
+        <section class="token-section">
+            <h2>🎫 Token Status</h2>
+            <div class="token-box">
+                <p>Now Serving: <strong id="currentToken">--</strong></p>
+                <p>Your Token: <strong id="yourToken">--</strong></p>
+            </div>
+        </section>
+    
+        <section class="menu-section">
+            <h2>Menu</h2>
+            <div id="menu" class="menu-grid"></div>
+        </section>
+
+        <!-- Floating Cart Button -->
+        <div class="floating-cart-btn" onclick="toggleCart()">
+            🛒 <span id="cartCount">0</span>
+        </div>
+
+        <!-- Slide Cart Panel -->
+        <div id="cartPanel" class="cart-panel">
+            <div class="cart-header">
+                <h2>🛒 Your Cart</h2>
+                <span class="close-cart" onclick="toggleCart()">&times;</span>
+            </div>
+
+            <ul id="cart" class="cart-list"></ul>
+            <h3 id="totalAmount">Total: ₹0</h3>
+
+            <label for="paymentMethod"><strong>Select Payment Method:</strong></label>
+            <select id="paymentMethod">
+                <option value="">-- Choose Payment Method --</option>
+                <option value="UPI">UPI</option>
+            </select>
+
+            <button id="orderBtn" onclick="placeOrder()">Place Order</button>
+        </div>
+
+        <div id="upiModal" class="upi-modal">
+            <div class="upi-modal-content">
+                <span class="close-btn" onclick="closeUPIPopup()">&times;</span>
+                <h2>Scan to Pay via UPI</h2>
+                <img src="images/PAY HERE.png" alt="Fake UPI QR" class="upi-qr">
+                <p><strong>Amount:</strong> ₹<span id="upiAmount">0</span></p>
+                <p>Processing payment...</p>
+                <p>Scan & pay... Verifying payment ⏳</p>
+            </div>
+        </div>
+
+        <section class="result-section">
+            <h2>Order Status</h2>
+            <div id="result" class="result-box">No order placed yet.</div>
+        </section>
+    </div>
+
+    <script>
+        const API_BASE = "https://quickbitezzz-backend4.onrender.com";
+        let cart = JSON.parse(localStorage.getItem("cart")) || [];
+        let currentOrderId = localStorage.getItem("currentOrderId") || null;
+        let trackingInterval = null;
+        let menuData = [];
+        let isPaid = false;
+        let selectedPaymentMethod = "";
+
+        if (!localStorage.getItem("rollNo")) {
+            window.location.href = "login.html";
+        }
+        
+        document.getElementById("userInfo").innerHTML = `
+            Welcome, ${localStorage.getItem("studentName") || "Student"} 
+            (${localStorage.getItem("rollNo")})
+        `;
+
+        const savedToken = localStorage.getItem("yourToken");
+        if (savedToken) {
+            document.getElementById("yourToken").innerText = savedToken;
+        }
+
+        function logoutUser() {
+            localStorage.clear();
+            window.location.href = "login.html";
+        }
+
+        function loadSeats() {
+            fetch(`${API_BASE}/seats`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("seatInfo").innerHTML =
+                    `Available Seats: ${data.available_seats} / ${data.total_seats}`;
+            })
+            .catch(error => console.log("Seat load error:", error));
+        }
+
+        function loadCurrentToken() {
+            fetch(`${API_BASE}/current-token`)
+            .then(res => res.json())
+            .then(data => {
+                document.getElementById("currentToken").innerText = data.current_token;
+            })
+            .catch(error => console.log("Token load error:", error));
+        }
+
+        fetch(`${API_BASE}/menu`)
+        .then(res => res.json())
+        .then(data => {
+            menuData = data;
+            let menuDiv = document.getElementById("menu");
+            menuDiv.innerHTML = "";
+
+            data.forEach(item => {
+                let card = document.createElement("div");
+                card.className = "food-card";
+
+                let emoji = "🍽️";
+                if (item.name === "Burger") emoji = "🍔";
+                if (item.name === "Pizza") emoji = "🍕";
+                if (item.name === "Fries") emoji = "🍟";
+                if (item.name === "Egg Noodles") emoji = "🍜";
+                if (item.name === "Water Bottle") emoji = "🧴";
+                if (item.name === "Ice Cream") emoji = "🍦";
+                if (item.name === "Lays") emoji = "🧧";
+                if (item.name === "Dairy Milk") emoji = "🍫";
+                if (item.name === "Thumbs Up") emoji = "🥤";
+                if (item.name === "Biscuits") emoji = "🍪";
+
+                card.innerHTML = `
+                    <div class="food-emoji">${emoji}</div>
+                    <h3>${item.name}</h3>
+                    <p><strong>ID:</strong> ${item.id}</p>
+                    <p><strong>Price:</strong> ₹${item.price}</p>
+                    <button onclick="addToCart(${item.id})">Add to Cart</button>
+                `;
+
+                menuDiv.appendChild(card);
+            });
+        })
+        .catch(error => {
+            console.log("Menu load error:", error);
+            document.getElementById("menu").innerHTML = "<p>Menu failed to load.</p>";
+        });
+
+        function addToCart(itemId) {
+            let item = menuData.find(food => food.id === itemId);
+            if (!item) return;
+
+            let existingItem = cart.find(cartItem => cartItem.id === itemId);
+
+            if (existingItem) {
+                existingItem.quantity += 1;
+            } else {
+                cart.push({
+                    id: item.id,
+                    name: item.name,
+                    price: item.price,
+                    quantity: 1
+                });
+            }
+
+            displayCart();
+        }
+
+        function toggleCart() {
+            const cartPanel = document.getElementById("cartPanel");
+            cartPanel.style.display = cartPanel.style.display === "block" ? "none" : "block";
+        }
+
+        function increaseQty(itemId) {
+            let item = cart.find(cartItem => cartItem.id === itemId);
+            if (item) {
+                item.quantity += 1;
+                displayCart();
+            }
+        }
+
+        function decreaseQty(itemId) {
+            let item = cart.find(cartItem => cartItem.id === itemId);
+            if (item) {
+                item.quantity -= 1;
+                if (item.quantity <= 0) {
+                    cart = cart.filter(cartItem => cartItem.id !== itemId);
+                }
+                displayCart();
+            }
+        }
+
+        function removeItem(itemId) {
+            cart = cart.filter(cartItem => cartItem.id !== itemId);
+            displayCart();
+        }
+
+        function getTotalAmount() {
+            let total = 0;
+            cart.forEach(item => {
+                total += item.price * item.quantity;
+            });
+            return total;
+        }
+
+        function displayCart() {
+            localStorage.setItem("cart", JSON.stringify(cart));
+
+            let cartList = document.getElementById("cart");
+            cartList.innerHTML = "";
+
+            document.getElementById("cartCount").innerText = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+            if (cart.length === 0) {
+                cartList.innerHTML = "<li>Cart is empty.</li>";
+                document.getElementById("totalAmount").innerHTML = "Total: ₹0";
+                return;
+            }
+
+            cart.forEach(item => {
+                let li = document.createElement("li");
+                li.innerHTML = `
+                    <div class="cart-item-row">
+                        <div>
+                            <strong>${item.name}</strong><br>
+                            Price: ₹${item.price} × ${item.quantity} = ₹${item.price * item.quantity}
+                        </div>
+                        <div class="cart-buttons">
+                            <button onclick="decreaseQty(${item.id})">-</button>
+                            <span>${item.quantity}</span>
+                            <button onclick="increaseQty(${item.id})">+</button>
+                            <button onclick="removeItem(${item.id})">Remove</button>
+                        </div>
+                    </div>
+                `;
+                cartList.appendChild(li);
+            });
+
+            document.getElementById("totalAmount").innerHTML = `Total: ₹${getTotalAmount()}`;
+        }
+
+        function closeUPIPopup() {
+            document.getElementById("upiModal").style.display = "none";
+        }
+
+        function placeOrder() {
+            if (cart.length === 0) {
+                document.getElementById("result").innerHTML = "Cart is empty.";
+                return;
+            }
+
+            let paymentMethod = document.getElementById("paymentMethod").value;
+            let total = getTotalAmount();
+
+            if (!paymentMethod) {
+                document.getElementById("result").innerHTML = "Please select UPI payment method.";
+                return;
+            }
+
+            selectedPaymentMethod = paymentMethod;
+
+            // Show QR popup first
+            document.getElementById("upiAmount").textContent = total;
+            document.getElementById("upiModal").style.display = "flex";
+
+            // Simulate payment and auto-place order after 3 sec
+            setTimeout(() => {
+                isPaid = true;
+                document.getElementById("upiModal").style.display = "none";
+
+                let orderItems = cart.map(item => ({
+                    name: item.name,
+                    price: item.price,
+                    quantity: item.quantity
+                }));
+
+                fetch(`${API_BASE}/order`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        item: orderItems,
+                        total: getTotalAmount(),
+                        payment_status: "Paid",
+                        payment_method: selectedPaymentMethod,
+                        roll_no: localStorage.getItem("rollNo") || "",
+                        student_name: localStorage.getItem("studentName") || ""
+                    })
+                })
+                .then(res => res.json())
+                .then(data => {
+                    isPaid = false;
+                    selectedPaymentMethod = "";
+                    document.getElementById("paymentMethod").value = "";
+
+                    currentOrderId = data.order.order_id;
+                    localStorage.setItem("currentOrderId", currentOrderId);
+                    localStorage.setItem("yourToken", data.order.token_number);
+                    document.getElementById("yourToken").innerText = data.order.token_number;
+
+                    cart = [];
+                    localStorage.removeItem("cart");
+                    displayCart();
+                    loadSeats();
+
+                    trackOrder();
+                })
+                .catch(error => {
+                    document.getElementById("result").innerHTML = "Error placing order.";
+                    console.log(error);
+                });
+            }, 3000);
+        }
+
+        function trackOrder() {
+            if (trackingInterval) {
+                clearInterval(trackingInterval);
+            }
+
+            function fetchOrderStatus() {
+                if (!currentOrderId) return;
+
+                fetch(`${API_BASE}/status/${currentOrderId}`)
+                .then(res => {
+                    if (res.status === 404) {
+                        // Order completed or deleted in admin panel
+                        localStorage.removeItem("currentOrderId");
+                        localStorage.removeItem("yourToken");
+                        document.getElementById("yourToken").innerText = "--";
+                        document.getElementById("result").innerHTML = "No active order.";
+                        clearInterval(trackingInterval);
+                        return null;
+                    }
+                    return res.json();
+                })
+                .then(data => {
+                    if (!data) return;
+
+                    let statusText = data.status || "Preparing Your Order";
+
+                    document.getElementById("result").innerHTML = `
+                        <p><strong>Order ID:</strong> ${data.order_id ?? "N/A"}</p>
+                        <p><strong>Token Number:</strong> ${data.token_number ?? "N/A"}</p>
+                        <p><strong>Status:</strong> 
+                            <span class="status ${getStatusClass(statusText)}">${statusText}</span>
+                        </p>
+                        <p><strong>Seats Left:</strong> ${data.seats_left ?? "N/A"}</p>
+                        <p><strong>Total Paid:</strong> ₹${data.total_amount ?? "N/A"}</p>
+                    `;
+                })
+                .catch(error => {
+                    console.log("Tracking error:", error);
+                });
+            }
+
+            fetchOrderStatus();
+            trackingInterval = setInterval(fetchOrderStatus, 3000);
+        }
+
+        function getStatusClass(status) {
+            if (!status || typeof status !== "string") return "";
+
+            let s = status.toLowerCase().trim();
+
+            if (s.includes("preparing")) return "status-preparing";
+            if (s.includes("ready") || s.includes("chi")) return "status-done";
+
+            return "";
+        } 
+
+        loadSeats();
+        loadCurrentToken();
+
+        if (currentOrderId) {
+            trackOrder();
+        }
+
+        setInterval(loadSeats, 3000);
+        setInterval(loadCurrentToken, 3000);
+        displayCart();
+    </script>
+</body>
+</html>
